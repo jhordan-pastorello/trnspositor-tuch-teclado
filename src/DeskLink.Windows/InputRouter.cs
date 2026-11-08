@@ -24,7 +24,7 @@ internal sealed class InputRouter
     private int _vx;
     private int _vy;
     private DateTime _edgeSince = DateTime.MinValue;
-    private DateTime _exitSince = DateTime.MinValue;
+    private int _overflow;
 
     public InputRouter(Config cfg, LinkClient link)
     {
@@ -170,19 +170,21 @@ internal sealed class InputRouter
         int nx = _vx + (int)Math.Round(dx * sx);
         int ny = _vy + (int)Math.Round(dy * sy);
 
-        bool exit = Edge switch
+        // quanto o cursor passou da borda de retorno neste evento
+        int over = Edge switch
         {
-            "bottom" => ny < 0,
-            "left" => nx >= rw,
-            "right" => nx < 0,
-            _ => ny >= rh
+            "bottom" => -ny,
+            "left" => nx - (rw - 1),
+            "right" => -nx,
+            _ => ny - (rh - 1)
         };
 
-        if (exit)
+        if (over > 0)
         {
-            if (_exitSince == DateTime.MinValue)
-                _exitSince = DateTime.UtcNow;
-            else if ((DateTime.UtcNow - _exitSince).TotalMilliseconds >= 180)
+            // so volta depois de empurrar ~40px de proposito: arrasto que
+            // raspa na borda nao corta mais
+            _overflow += over;
+            if (_overflow >= 40)
             {
                 ExitRemote();
                 return;
@@ -190,7 +192,7 @@ internal sealed class InputRouter
         }
         else
         {
-            _exitSince = DateTime.MinValue;
+            _overflow = 0;
         }
 
         _vx = Math.Clamp(nx, 0, rw - 1);
@@ -254,7 +256,7 @@ internal sealed class InputRouter
 
         _remote = true;
         _edgeSince = DateTime.MinValue;
-        _exitSince = DateTime.MinValue;
+        _overflow = 0;
 
         switch (Edge)
         {
@@ -289,7 +291,7 @@ internal sealed class InputRouter
         if (!_remote) return;
         _remote = false;
         _edgeSince = DateTime.MinValue;
-        _exitSince = DateTime.MinValue;
+        _overflow = 0;
 
         _link.Send(Proto.LeaveMsg());
         Native.ClipCursor(IntPtr.Zero);

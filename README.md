@@ -5,6 +5,7 @@
 Encoste o ponteiro no topo da tela do notebook: o teclado e o touchpad passam a controlar o
 servidor Linux. Volte descendo até a borda inferior (ou com `Ctrl+Alt+Espaço`). A área de
 transferência vai junto — texto **e imagens** (aquele print do GNOME que você cola com `Ctrl+V`).
+E a pasta `Z:` mapeada no Windows é o mesmo diretório do Linux: arraste arquivos entre os dois.
 
 Sem portal, sem diálogo de permissão, sem root em runtime. Sobe sozinho no login dos dois lados.
 
@@ -147,12 +148,43 @@ O script publica o binário em `%LOCALAPPDATA%\DeskLink\app` e registra a tarefa
 | Ação | Como |
 |---|---|
 | Ir para o Linux | encoste no **topo** da tela do notebook e segure ~250 ms |
-| Voltar para o Windows | desça até a **borda inferior** do Linux (ou `Ctrl+Alt+Espaço`) |
+| Voltar para o Windows | desça até a **borda inferior** do Linux e **empurre ~40 px** além dela (ou `Ctrl+Alt+Espaço`) |
 | Alternar a qualquer momento | `Ctrl+Alt+Espaço` |
 | Bordas diferentes | `Edge` no `config.json` |
 
 Ao trocar, o cursor do Windows "desaparece" (fica numa janela invisível) e o teclado passa a
 digitar no Linux — inclusive acentos, `Ctrl+C/V`, `Alt+Tab` e atalhos do desktop.
+
+A margem de 40 px na volta existe de propósito: encostar na borda durante um arrasto não corta
+mais a seleção; para voltar é preciso empurrar o ponteiro para fora.
+
+---
+
+## Arquivos
+
+O servidor expõe uma pasta SMB e o instalador mapeia no Windows como **`Z:`**:
+
+```
+Z:\                    ↔  /home/storage/Transferencia  (no Linux)
+```
+
+Arraste arquivos entre o Explorer e o Nautilus normalmente — é o mesmo diretório, sem cópia
+manual e com a velocidade da rede local.
+
+Configuração (no servidor, uma vez):
+
+```bash
+sudo ./tools/setup-samba.sh
+```
+
+No Windows, para remapear (outro PC, ou após trocar senha):
+
+```powershell
+net use Z: \\192.168.1.30\Transferencia /user:storage <senha> /persistent:yes
+```
+
+Alternativa sem SMB: o **LocalSend** (instalado nos dois lados) serve para envios pontuais —
+abra o app, arraste o arquivo e o outro lado aceita o pareamento.
 
 ---
 
@@ -244,7 +276,8 @@ Get-Content "$env:LOCALAPPDATA\DeskLink\desklink.log" -Tail 30
 - **Gestos de 3/4 dedos** do touchpad são consumidos pelo Windows antes de qualquer aplicativo —
   não há como encaminhá-los ao Linux. Movimento, clique, scroll e teclado funcionam.
 - **Clipboard**: apenas texto e PNG (imagens).
-- Arrastar/selecionar com o touchpad pode encerrar antes do fim em alguns casos.
+- Arrastar/selecionar usa Raw Input (deltas do dispositivo); para voltar ao Windows é preciso
+  empurrar ~40 px além da borda.
 - Keycodes são físicos (evdev): o layout do Linux deve ser o mesmo do Windows.
 - Um cliente por vez (um notebook controlando um servidor).
 
