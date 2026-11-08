@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DeskLink.Daemon/DeskLink.Daemon.csproj" />
+    <Project Path="src/DeskLink.Protocol/DeskLink.Protocol.csproj" />
+    <Project Path="src/DeskLink.Windows/DeskLink.Windows.csproj" />
+  </Folder>
+</Solution>
