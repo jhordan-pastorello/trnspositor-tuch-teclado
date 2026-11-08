@@ -334,7 +334,7 @@ class Daemon:
         elif msg_type == 10:
             self.last_clip_key = "image:" + hashlib.sha1(payload).hexdigest()
             set_clipboard_image(payload)
-            log("clipboard <- windows (imagem %d KB)" % (len(payload) // 1024))
+            log("clipboard <- windows (imagem %d bytes)" % len(payload))
         elif msg_type == 1:
             info = json.loads(payload)
             log("cliente:", info.get("name"), info.get("w"), "x", info.get("h"))
@@ -433,7 +433,7 @@ class Daemon:
                 self.last_clip_key = key
                 if kind == "image":
                     self.send(10, data)
-                    log("clipboard -> windows (imagem %d KB)" % (len(data) // 1024))
+                    log("clipboard -> windows (imagem %d bytes)" % len(data))
                 else:
                     self.send(9, data.encode("utf-8"))
                     log("clipboard -> windows (%d chars)" % len(data))
