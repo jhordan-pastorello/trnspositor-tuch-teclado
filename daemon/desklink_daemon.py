@@ -417,28 +417,65 @@ class Daemon:
                 self.buf = b""
 
     def clip_loop(self):
+        # GNOME nao suporta wl-paste --watch; usamos um watcher GTK3 que avisa
+        # por evento (sinal owner-change) - zero polling, zero engasgo.
+        helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clipwatch.py")
+        try:
+            self.sync_clipboard()
+        except Exception as e:
+            log("clipboard inicial:", e)
+
         while True:
-            time.sleep(0.3)
             try:
-                if self.conn is None:
-                    continue
-                item = read_clipboard()
-                if not item:
-                    continue
-                kind, data = item
-                raw = data if isinstance(data, bytes) else data.encode("utf-8", "replace")
-                key = kind + ":" + hashlib.sha1(raw).hexdigest()
-                if key == self.last_clip_key:
-                    continue
-                self.last_clip_key = key
-                if kind == "image":
-                    self.send(10, data)
-                    log("clipboard -> windows (imagem %d bytes)" % len(data))
-                else:
-                    self.send(9, data.encode("utf-8"))
-                    log("clipboard -> windows (%d chars)" % len(data))
+                proc = subprocess.Popen([sys.executable, helper],
+                                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                for _line in proc.stdout:
+                    try:
+                        self.sync_clipboard()
+                    except Exception as e:
+                        log("clipboard:", e)
+                proc.wait()
             except Exception as e:
-                log("clipboard watcher:", e)
+                log("clipwatch:", e)
+            time.sleep(2)
+
+    def sync_clipboard(self):
+        if self.conn is None:
+            return
+
+        # 1 processo: texto
+        try:
+            out = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, timeout=2)
+        except Exception:
+            return
+
+        if out.returncode == 0 and out.stdout:
+            key = "text:" + hashlib.sha1(out.stdout).hexdigest()
+            if key == self.last_clip_key:
+                return
+            self.last_clip_key = key
+            text = out.stdout.decode("utf-8", "replace")
+            self.send(9, text.encode("utf-8"))
+            log("clipboard -> windows (%d chars)" % len(text))
+            return
+
+        # sem texto: pode ser imagem (print do GNOME)
+        types = clipboard_types()
+        if "image/png" not in types:
+            return
+        try:
+            img = subprocess.run(["wl-paste", "--type", "image/png"], capture_output=True, timeout=5)
+        except Exception:
+            return
+        if img.returncode != 0 or not img.stdout:
+            return
+
+        key = "image:" + hashlib.sha1(img.stdout).hexdigest()
+        if key == self.last_clip_key:
+            return
+        self.last_clip_key = key
+        self.send(10, img.stdout)
+        log("clipboard -> windows (imagem %d bytes)" % len(img.stdout))
 
 
 class Discovery(threading.Thread):

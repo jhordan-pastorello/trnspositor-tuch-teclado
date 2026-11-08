@@ -25,6 +25,7 @@ internal sealed class InputRouter
     private int _vy;
     private DateTime _edgeSince = DateTime.MinValue;
     private int _overflow;
+    private readonly HashSet<int> _keysDown = new();
 
     public InputRouter(Config cfg, LinkClient link)
     {
@@ -235,6 +236,21 @@ internal sealed class InputRouter
         bool extended = (k.flags & 0x01) != 0;
         if (!KeyMap.TryMap(k.scanCode, extended, out int code)) return false;
 
+        // O Windows repete o keydown enquanto a tecla esta pressionada. Repassar
+        // cada repeticao reinicia o timer de repeticao do Linux e a tecla "trava".
+        // Mandamos so o primeiro press (modificadores sempre passam, para nunca
+        // ficar com Shift preso).
+        bool modifier = code is 42 or 54 or 29 or 97 or 56 or 100 or 125 or 126;
+        if (down)
+        {
+            if (!modifier && !_keysDown.Add(code)) return true;
+            _keysDown.Add(code);
+        }
+        else
+        {
+            _keysDown.Remove(code);
+        }
+
         _link.Send(Proto.KeyMsg(code, down));
         return true;
     }
@@ -257,6 +273,7 @@ internal sealed class InputRouter
         _remote = true;
         _edgeSince = DateTime.MinValue;
         _overflow = 0;
+        _keysDown.Clear();
 
         switch (Edge)
         {
@@ -292,6 +309,7 @@ internal sealed class InputRouter
         _remote = false;
         _edgeSince = DateTime.MinValue;
         _overflow = 0;
+        _keysDown.Clear();
 
         _link.Send(Proto.LeaveMsg());
         Native.ClipCursor(IntPtr.Zero);

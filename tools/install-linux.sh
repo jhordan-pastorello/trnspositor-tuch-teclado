@@ -8,6 +8,7 @@ root="$(dirname "$here")"
 echo "==> copiando daemon"
 mkdir -p ~/.local/share/desklink ~/.config/systemd/user
 cp "$root/daemon/desklink_daemon.py" ~/.local/share/desklink/desklink_daemon.py
+cp "$root/daemon/clipwatch.py" ~/.local/share/desklink/clipwatch.py
 cp "$here/desklink.service" ~/.config/systemd/user/desklink.service
 
 echo "==> recarregando systemd e (re)iniciando"
@@ -23,7 +24,7 @@ OK. Falta uma vez (com sudo), se ainda nao fez:
   sudo ./tools/setup-uinput.sh
 
 Dependencias (Ubuntu):
-  sudo apt install wl-clipboard
+  sudo apt install python3-gi gir1.2-gtk-3.0 wl-clipboard
 
 Firewall (ufw), se estiver ativo:
   sudo ufw allow from 192.168.1.0/24 to any port 47810 proto tcp comment DeskLink-TCP
