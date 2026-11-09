@@ -7,6 +7,13 @@ internal static class Program
 {
     private static Mutex? _mutex;
 
+    // Referencias estaticas: sem isso o GC pode coletar o InputRouter (e os
+    // delegates dos hooks) enquanto o loop roda -> "callback made on a garbage
+    // collected delegate" e fail-fast.
+    private static LinkClient? _link;
+    private static InputRouter? _router;
+    private static ClipboardSync? _clip;
+
     private static void Main()
     {
         // DPI: sem isso GetSystemMetrics (e as coordenadas) vem escalado
@@ -19,21 +26,24 @@ internal static class Program
         Config.Load();
         Log.Write($"=== DeskLink iniciando (pid {Environment.ProcessId}, usuario {Environment.UserName}) ===");
 
-        var link = new LinkClient(Config.Current);
-        var router = new InputRouter(Config.Current, link);
-        var clip = new ClipboardSync(link);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            Log.Write("FATAL nao tratado: " + e.ExceptionObject);
 
-        link.OnFrame += (type, payload) =>
+        _link = new LinkClient(Config.Current);
+        _router = new InputRouter(Config.Current, _link);
+        _clip = new ClipboardSync(_link);
+
+        _link.OnFrame += (type, payload) =>
         {
             if (type == Proto.Clipboard)
-                clip.Apply(Encoding.UTF8.GetString(payload));
+                _clip.Apply(Encoding.UTF8.GetString(payload));
             else if (type == Proto.ClipboardImage)
-                clip.ApplyImage(payload);
+                _clip.ApplyImage(payload);
         };
 
-        link.Start();
-        router.Start();
-        clip.Start();
+        _link.Start();
+        _router.Start();
+        _clip.Start();
 
         while (true)
         {
@@ -43,6 +53,7 @@ internal static class Program
             Native.DispatchMessage(ref msg);
         }
 
+        GC.KeepAlive(_router);
         Log.Write("loop de mensagens encerrado");
     }
 }

@@ -75,8 +75,9 @@ O GNOME trata os dois como hardware real. Não há portal, screencast, X11 ou pe
 ### Clipboard
 - Texto: `CF_UNICODETEXT` ↔ `text/plain;charset=utf-8`.
 - Imagens: PNG ↔ `image/png` (é o formato que o print do GNOME usa).
-- **Orientado a evento**: um watcher GTK3 (`daemon/clipwatch.py`) avisa a cada mudança de
-  clipboard — sem polling, sem processos periódicos, sem engasgo no teclado.
+- **Orientado a polling leve** (600 ms, só `wl-paste --list-types` + leitura quando muda): no
+  Wayland o evento de seleção só chega ao cliente **com foco** e o GNOME não implementa
+  `wlr-data-control`, então `wl-paste --watch` e sinais do GTK não funcionam para um daemon.
 
 ---
 
@@ -85,7 +86,7 @@ O GNOME trata os dois como hardware real. Não há portal, screencast, X11 ou pe
 | Lado | Requisitos |
 |---|---|
 | **Windows** | Windows 10 v1809+ ou 11 · [.NET 10 Runtime](https://dotnet.microsoft.com/download) (ou SDK para compilar) |
-| **Linux** | GNOME em **Wayland** (testado no Ubuntu 26.04) · Python 3.8+ · `python3-gi` + `gir1.2-gtk-3.0` · `wl-clipboard` · acesso a `/dev/uinput` (grupo `input`, configurado uma vez) |
+| **Linux** | GNOME em **Wayland** (testado no Ubuntu 26.04) · Python 3.8+ · `wl-clipboard` · acesso a `/dev/uinput` (grupo `input`, configurado uma vez) |
 
 Rede: as duas máquinas na mesma LAN (ou Tailscale/VPN), portas `47810/tcp` e `47811/udp`.
 
@@ -318,9 +319,7 @@ DeskLink/
 │  ├─ Proto.cs                    # framing do protocolo
 │  ├─ Config.cs / Log.cs / Native.cs
 │  └─ app.manifest                # DPI PerMonitorV2
-├─ daemon/
-│  ├─ desklink_daemon.py          # uinput, TLS, discovery, clipboard
-│  └─ clipwatch.py                # watcher de clipboard (GTK3, por evento)
+├─ daemon/desklink_daemon.py      # uinput, TLS, discovery, clipboard
 ├─ tools/
 │  ├─ install-windows.ps1         # publica + tarefa agendada
 │  ├─ install-linux.sh            # daemon + systemd --user

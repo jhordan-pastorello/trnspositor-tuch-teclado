@@ -8,7 +8,6 @@ root="$(dirname "$here")"
 echo "==> copiando daemon"
 mkdir -p ~/.local/share/desklink ~/.config/systemd/user
 cp "$root/daemon/desklink_daemon.py" ~/.local/share/desklink/desklink_daemon.py
-cp "$root/daemon/clipwatch.py" ~/.local/share/desklink/clipwatch.py
 cp "$here/desklink.service" ~/.config/systemd/user/desklink.service
 
 echo "==> recarregando systemd e (re)iniciando"
