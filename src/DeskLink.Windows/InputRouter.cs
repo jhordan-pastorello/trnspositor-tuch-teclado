@@ -312,6 +312,8 @@ internal sealed class InputRouter
         _keysDown.Clear();
 
         _link.Send(Proto.LeaveMsg());
+        // puxa o clipboard do Linux agora (foi copiado algo enquanto estavamos la)
+        _link.Send(Proto.PullClipboardMsg());
         Native.ClipCursor(IntPtr.Zero);
         _hidden?.Hide();
 

@@ -59,6 +59,10 @@ Um daemon Python cria dispositivos **virtuais no kernel** via `/dev/uinput`:
 
 O GNOME trata os dois como hardware real. Não há portal, screencast, X11 ou permissão a pedir.
 
+Os dispositivos são **criados ao entrar** no Linux e **destruídos ao voltar** — assim, quando você
+usa o teclado/mouse físicos do servidor, não existe dispositivo DeskLink nenhum no sistema
+(importante para jogos que enumeram teclados, tipo Wine).
+
 ### Troca de telas
 - Borda configurável (`top` por padrão). Permanecer `SwitchDelayMs` na borda troca o controle.
 - A posição na borda é mapeada **proporcionalmente** e o movimento é escalado por
@@ -75,9 +79,12 @@ O GNOME trata os dois como hardware real. Não há portal, screencast, X11 ou pe
 ### Clipboard
 - Texto: `CF_UNICODETEXT` ↔ `text/plain;charset=utf-8`.
 - Imagens: PNG ↔ `image/png` (é o formato que o print do GNOME usa).
-- **Orientado a polling leve** (600 ms, só `wl-paste --list-types` + leitura quando muda): no
-  Wayland o evento de seleção só chega ao cliente **com foco** e o GNOME não implementa
-  `wlr-data-control`, então `wl-paste --watch` e sinais do GTK não funcionam para um daemon.
+- **Sob demanda**: o Linux só lê o clipboard quando você **volta para o Windows** (mensagem
+  `PullClipboard`) e na conexão. Não há polling — e isso é de propósito: no Wayland, ler a
+  seleção acorda o **dono** dela, e um jogo/app pesado pode congelar por um instante a cada
+  leitura.
+- Se quiser o modo antigo (polling de 1 s), crie `~/.config/desklink/config.json` com
+  `{"clipboard": "poll"}`.
 
 ---
 
@@ -230,6 +237,7 @@ Cada mensagem: `[u8 tipo][u32 tamanho LE][payload]`.
 | 8 | `Heartbeat` | — | W → L |
 | 9 | `Clipboard` | UTF-8 | ambos |
 | 10 | `ClipboardImage` | PNG | ambos |
+| 11 | `PullClipboard` | — (pede o clipboard do Linux) | W → L |
 
 Handshake:
 
@@ -277,7 +285,9 @@ Get-Content "$env:LOCALAPPDATA\DeskLink\desklink.log" -Tail 30
 
 - **Gestos de 3/4 dedos** do touchpad são consumidos pelo Windows antes de qualquer aplicativo —
   não há como encaminhá-los ao Linux. Movimento, clique, scroll e teclado funcionam.
-- **Clipboard**: apenas texto e PNG (imagens).
+- **Clipboard**: apenas texto e PNG (imagens). O sentido Linux → Windows é capturado **quando
+  você volta para o Windows** (ou na conexão) — não há sincronização em tempo real para não
+  acordar o app dono da seleção.
 - Arrastar/selecionar usa Raw Input (deltas do dispositivo); para voltar ao Windows é preciso
   empurrar ~40 px além da borda.
 - Keycodes são físicos (evdev): o layout do Linux deve ser o mesmo do Windows.

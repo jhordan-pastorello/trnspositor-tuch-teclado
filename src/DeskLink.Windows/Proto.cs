@@ -5,7 +5,7 @@ namespace DeskLink;
 
 internal static class Proto
 {
-    public const byte Hello = 1, HelloAck = 2, Pointer = 3, Button = 4, Wheel = 5, Key = 6, Leave = 7, Heartbeat = 8, Clipboard = 9, ClipboardImage = 10;
+    public const byte Hello = 1, HelloAck = 2, Pointer = 3, Button = 4, Wheel = 5, Key = 6, Leave = 7, Heartbeat = 8, Clipboard = 9, ClipboardImage = 10, PullClipboard = 11;
 
     private static byte[] Frame(byte type, int len)
     {
@@ -67,6 +67,8 @@ internal static class Proto
     }
 
     public static byte[] HeartbeatMsg() => Frame(Heartbeat, 0);
+
+    public static byte[] PullClipboardMsg() => Frame(PullClipboard, 0);
 
     public static byte[] HelloMsg(string name, int w, int h)
     {

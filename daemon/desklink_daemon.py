@@ -36,9 +36,10 @@ CFG_DIR = os.path.expanduser("~/.config/desklink")
 CERT = os.path.join(CFG_DIR, "cert.pem")
 KEY = os.path.join(CFG_DIR, "key.pem")
 SCREEN_FILE = os.path.join(CFG_DIR, "screen.json")
+CONF_FILE = os.path.join(CFG_DIR, "config.json")
 
 # ---- uinput / input-event-codes ----
-EV_SYN, EV_KEY, EV_REL, EV_ABS = 0x00, 0x01, 0x02, 0x03
+EV_SYN, EV_KEY, EV_REL, EV_ABS, EV_REP = 0x00, 0x01, 0x02, 0x03, 0x14
 SYN_REPORT = 0
 REL_X, REL_Y, REL_HWHEEL, REL_WHEEL = 0x00, 0x01, 0x06, 0x08
 ABS_X, ABS_Y = 0x00, 0x01
@@ -63,10 +64,12 @@ def log(*a):
 
 
 class UinputDevice:
-    def __init__(self, name, keys=(), rels=(), abs_axes=()):
+    def __init__(self, name, keys=(), rels=(), abs_axes=(), repeat=False):
         self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
         fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
         fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_SYN)
+        if repeat:
+            fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_REP)
         if rels:
             fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_REL)
             for r in rels:
@@ -134,7 +137,7 @@ class Mouse(UinputDevice):
 class Keyboard(UinputDevice):
     def __init__(self):
         codes = list(range(1, 128)) + list(range(0x160, 0x180))
-        super().__init__("DeskLink Virtual Keyboard", keys=codes)
+        super().__init__("DeskLink Virtual Keyboard", keys=codes, repeat=True)
 
     def key(self, code, down):
         self.emit(EV_KEY, int(code), 1 if down else 0)
@@ -283,37 +286,59 @@ class Daemon:
         self.remote_w, self.remote_h = detect_screen()
         save_json(SCREEN_FILE, w=self.remote_w, h=self.remote_h)
 
-        self.mouse = Mouse()
-        self.keyboard = Keyboard()
-        log("uinput: mouse e teclado virtuais criados; tela %dx%d" % (self.remote_w, self.remote_h))
+        # Dispositivos criados SOB DEMANDA (ao entrar no Linux) e destruidos ao
+        # voltar: com eles sempre presentes, jogos via Wine enumeram um teclado
+        # extra e o teclado fisico "buga" ao segurar tecla.
+        self.mouse = None
+        self.keyboard = None
+        log("tela %dx%d; uinput sera criado ao entrar no Linux" % (self.remote_w, self.remote_h))
 
         self.active = False
-        self.cx = 0
-        self.cy = 0
         self.pressed_keys = set()
         self.pressed_buttons = set()
 
+    def ensure_devices(self):
+        if self.mouse is None:
+            self.mouse = Mouse()
+            self.keyboard = Keyboard()
+            log("uinput: dispositivos criados")
+
+    def destroy_devices(self):
+        if self.mouse is not None:
+            self.mouse.close()
+            self.mouse = None
+        if self.keyboard is not None:
+            self.keyboard.close()
+            self.keyboard = None
+            log("uinput: dispositivos removidos")
+
     # ---- entrada ----
     def move(self, x, y):
+        self.ensure_devices()
         self.active = True
         self.mouse.move_abs(x, y, self.remote_w, self.remote_h)
 
     def button(self, btn, down):
+        self.ensure_devices()
         self.mouse.button(btn, down)
         (self.pressed_buttons.add(btn) if down else self.pressed_buttons.discard(btn))
 
     def key(self, code, down):
+        self.ensure_devices()
         self.keyboard.key(code, down)
         (self.pressed_keys.add(code) if down else self.pressed_keys.discard(code))
 
     def leave(self):
-        for k in list(self.pressed_keys):
-            self.keyboard.key(k, 0)
-        for b in list(self.pressed_buttons):
-            self.mouse.button(b, False)
+        if self.keyboard is not None:
+            for k in list(self.pressed_keys):
+                self.keyboard.key(k, 0)
+        if self.mouse is not None:
+            for b in list(self.pressed_buttons):
+                self.mouse.button(b, False)
         self.pressed_keys.clear()
         self.pressed_buttons.clear()
         self.active = False
+        self.destroy_devices()
 
     # ---- rede ----
     def send(self, msg_type, payload=b""):
@@ -335,11 +360,14 @@ class Daemon:
             self.last_clip_key = "image:" + hashlib.sha1(payload).hexdigest()
             set_clipboard_image(payload)
             log("clipboard <- windows (imagem %d bytes)" % len(payload))
+        if msg_type == 11:  # PullClipboard: cliente voltou ao Windows
+            threading.Thread(target=self.sync_clipboard, daemon=True).start()
         elif msg_type == 1:
             info = json.loads(payload)
             log("cliente:", info.get("name"), info.get("w"), "x", info.get("h"))
             self.send(2, json.dumps({"v": 1, "name": socket.gethostname(),
                                      "w": self.remote_w, "h": self.remote_h}).encode())
+            threading.Thread(target=self.sync_clipboard, daemon=True).start()
         elif msg_type == 3:
             x, y = struct.unpack("<ii", payload)
             self.move(max(0, min(self.remote_w - 1, x)), max(0, min(self.remote_h - 1, y)))
@@ -348,6 +376,7 @@ class Daemon:
             self.button(btn, bool(down))
         elif msg_type == 5:
             dx, dy = struct.unpack("<ii", payload)
+            self.ensure_devices()
             self.mouse.wheel(dx, dy)
         elif msg_type == 6:
             code, down = struct.unpack("<HB", payload)
@@ -417,11 +446,11 @@ class Daemon:
                 self.buf = b""
 
     def clip_loop(self):
-        # No Wayland o evento de selecao so chega ao cliente com foco, e o GNOME
-        # nao tem wlr-data-control: polling e o unico caminho. Usamos
-        # --list-types (responde na hora) para nunca bloquear no wl-paste.
+        # Modo legado (config "clipboard": "poll"). Desligado por padrao: cada
+        # leitura acorda o dono da selecao (jogos via Wine congelam). O modo
+        # normal e por demanda (PullClipboard ao voltar para o Windows).
         while True:
-            time.sleep(0.6)
+            time.sleep(1.0)
             try:
                 self.sync_clipboard()
             except Exception as e:
@@ -505,7 +534,12 @@ if __name__ == "__main__":
     log("fingerprint:", fingerprint())
     d = Daemon()
     Discovery(d).start()
-    threading.Thread(target=d.clip_loop, daemon=True, name="clip").start()
+    cfg = load_json(CONF_FILE) or {}
+    if cfg.get("clipboard", "pull") == "poll":
+        threading.Thread(target=d.clip_loop, daemon=True, name="clip").start()
+        log("clipboard em modo poll (1s)")
+    else:
+        log("clipboard sob demanda (ao voltar para o Windows)")
     try:
         d.tcp_loop()
     except KeyboardInterrupt:
